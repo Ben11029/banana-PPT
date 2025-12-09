@@ -4,6 +4,8 @@
 
 *Vibe your PPT like vibing code.*
 
+**中文 | [English](README_EN.md)**
+
 <p>
 
 [![GitHub Stars](https://img.shields.io/github/stars/Anionex/banana-slides?style=square)](https://github.com/Anionex/banana-slides/stargazers)
