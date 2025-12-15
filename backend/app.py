@@ -107,6 +107,11 @@ def create_app():
     with app.app_context():
         db.create_all()
     
+    # Health check endpoint
+    @app.route('/health')
+    def health_check():
+        return {'status': 'ok', 'message': 'Banana Slides API is running'}
+    
     # Output language endpoint
     @app.route('/api/output-language', methods=['GET'])
     def get_output_language():
