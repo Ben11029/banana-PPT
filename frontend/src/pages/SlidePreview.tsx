@@ -33,7 +33,7 @@ import { useProjectStore } from '@/store/useProjectStore';
 import { useExportTasksStore, type ExportTaskType } from '@/store/useExportTasksStore';
 import { getImageUrl } from '@/api/client';
 import { getPageImageVersions, setCurrentImageVersion, updateProject, uploadTemplate, exportPPTX as apiExportPPTX, exportPDF as apiExportPDF, exportEditablePPTX as apiExportEditablePPTX } from '@/api/endpoints';
-import type { ImageVersion, DescriptionContent } from '@/types';
+import type { ImageVersion, DescriptionContent, ExportExtractorMethod, ExportInpaintMethod } from '@/types';
 import { normalizeErrorMessage } from '@/utils';
 
 export const SlidePreview: React.FC = () => {
@@ -98,6 +98,14 @@ export const SlidePreview: React.FC = () => {
   // 素材选择器模态开关
   const [userTemplates, setUserTemplates] = useState<UserTemplate[]>([]);
   const [isMaterialSelectorOpen, setIsMaterialSelectorOpen] = useState(false);
+  // 导出设置
+  const [exportExtractorMethod, setExportExtractorMethod] = useState<ExportExtractorMethod>(
+    (currentProject?.export_extractor_method as ExportExtractorMethod) || 'hybrid'
+  );
+  const [exportInpaintMethod, setExportInpaintMethod] = useState<ExportInpaintMethod>(
+    (currentProject?.export_inpaint_method as ExportInpaintMethod) || 'hybrid'
+  );
+  const [isSavingExportSettings, setIsSavingExportSettings] = useState(false);
   // 每页编辑参数缓存（前端会话内缓存，便于重复执行）
   const [editContextByPage, setEditContextByPage] = useState<Record<string, {
     prompt: string;
@@ -154,6 +162,9 @@ export const SlidePreview: React.FC = () => {
         // 新项目，初始化额外要求和风格描述
         setExtraRequirements(currentProject.extra_requirements || '');
         setTemplateStyle(currentProject.template_style || '');
+        // 初始化导出设置
+        setExportExtractorMethod((currentProject.export_extractor_method as ExportExtractorMethod) || 'hybrid');
+        setExportInpaintMethod((currentProject.export_inpaint_method as ExportInpaintMethod) || 'hybrid');
         lastProjectId.current = currentProject.id || null;
         isEditingRequirements.current = false;
         isEditingTemplateStyle.current = false;
@@ -728,6 +739,28 @@ export const SlidePreview: React.FC = () => {
       setIsSavingTemplateStyle(false);
     }
   }, [currentProject, projectId, templateStyle, syncProject, show]);
+
+  const handleSaveExportSettings = useCallback(async () => {
+    if (!currentProject || !projectId) return;
+    
+    setIsSavingExportSettings(true);
+    try {
+      await updateProject(projectId, { 
+        export_extractor_method: exportExtractorMethod,
+        export_inpaint_method: exportInpaintMethod 
+      });
+      // 更新本地项目状态
+      await syncProject(projectId);
+      show({ message: '导出设置已保存', type: 'success' });
+    } catch (error: any) {
+      show({ 
+        message: `保存失败: ${error.message || '未知错误'}`, 
+        type: 'error' 
+      });
+    } finally {
+      setIsSavingExportSettings(false);
+    }
+  }, [currentProject, projectId, exportExtractorMethod, exportInpaintMethod, syncProject, show]);
 
   const handleTemplateSelect = async (templateFile: File | null, templateId?: string) => {
     if (!projectId) return;
@@ -1669,6 +1702,13 @@ export const SlidePreview: React.FC = () => {
             onSaveTemplateStyle={handleSaveTemplateStyle}
             isSavingRequirements={isSavingRequirements}
             isSavingTemplateStyle={isSavingTemplateStyle}
+            // 导出设置
+            exportExtractorMethod={exportExtractorMethod}
+            exportInpaintMethod={exportInpaintMethod}
+            onExportExtractorMethodChange={setExportExtractorMethod}
+            onExportInpaintMethodChange={setExportInpaintMethod}
+            onSaveExportSettings={handleSaveExportSettings}
+            isSavingExportSettings={isSavingExportSettings}
           />
         </>
       )}
