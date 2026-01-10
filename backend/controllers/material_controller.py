@@ -4,8 +4,7 @@ Material Controller - handles standalone material image generation
 from flask import Blueprint, request, current_app
 from models import db, Project, Material, Task
 from utils import success_response, error_response, not_found, bad_request
-from services import FileService
-from services.ai_service_manager import get_ai_service
+from services import AIService, FileService
 from services.task_manager import task_manager, generate_material_image_task
 from pathlib import Path
 from werkzeug.utils import secure_filename
@@ -188,7 +187,7 @@ def generate_material_image(project_id):
                 return not_found('Project')
 
         # Initialize services
-        ai_service = get_ai_service()
+        ai_service = AIService()
         file_service = FileService(current_app.config['UPLOAD_FOLDER'])
 
         # 创建临时目录保存参考图片（后台任务会清理）
@@ -232,6 +231,13 @@ def generate_material_image(project_id):
 
             # Get app instance for background task
             app = current_app._get_current_object()
+            
+            # Determine image settings: use project settings if available, otherwise use global config
+            aspect_ratio = current_app.config['DEFAULT_ASPECT_RATIO']
+            resolution = current_app.config['DEFAULT_RESOLUTION']
+            if project:  # If project exists, use its settings
+                aspect_ratio = project.image_aspect_ratio or aspect_ratio
+                resolution = project.image_resolution or resolution
 
             # Submit background task
             task_manager.submit_task(
@@ -243,8 +249,8 @@ def generate_material_image(project_id):
                 file_service,
                 ref_path_str,
                 additional_ref_images if additional_ref_images else None,
-                current_app.config['DEFAULT_ASPECT_RATIO'],
-                current_app.config['DEFAULT_RESOLUTION'],
+                aspect_ratio,
+                resolution,
                 temp_dir_str,
                 app
             )

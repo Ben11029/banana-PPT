@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Sparkles, FileText, FileEdit, ImagePlus, Paperclip, Palette, Lightbulb, Search, Settings } from 'lucide-react';
+import { Sparkles, FileText, FileEdit, ImagePlus, Paperclip, Palette, Lightbulb, Search } from 'lucide-react';
 import { Button, Textarea, Card, useToast, MaterialGeneratorModal, ReferenceFileList, ReferenceFileSelector, FilePreviewModal, ImagePreviewList } from '@/components/shared';
 import { TemplateSelector, getTemplateFile } from '@/components/shared/TemplateSelector';
 import { listUserTemplates, type UserTemplate, uploadReferenceFile, type ReferenceFile, associateFileToProject, triggerFileParse, uploadMaterial, associateMaterialsToProject } from '@/api/endpoints';
 import { useProjectStore } from '@/store/useProjectStore';
-import { PRESET_STYLES } from '@/config/presetStyles';
 
 type CreationType = 'idea' | 'outline' | 'description';
 
@@ -16,6 +15,8 @@ export const Home: React.FC = () => {
   
   const [activeTab, setActiveTab] = useState<CreationType>('idea');
   const [content, setContent] = useState('');
+  const [imageResolution, setImageResolution] = useState<'1K' | '2K' | '4K'>('2K');
+  const [imageAspectRatio, setImageAspectRatio] = useState<'1:1' | '2:3' | '3:2' | '3:4' | '4:3' | '4:5' | '5:4' | '9:16' | '16:9' | '21:9'>('16:9');
   const [selectedTemplate, setSelectedTemplate] = useState<File | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [selectedPresetTemplateId, setSelectedPresetTemplateId] = useState<string | null>(null);
@@ -26,9 +27,6 @@ export const Home: React.FC = () => {
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   const [isFileSelectorOpen, setIsFileSelectorOpen] = useState(false);
   const [previewFileId, setPreviewFileId] = useState<string | null>(null);
-  const [useTemplateStyle, setUseTemplateStyle] = useState(false);
-  const [templateStyle, setTemplateStyle] = useState('');
-  const [hoveredPresetId, setHoveredPresetId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -383,10 +381,7 @@ export const Home: React.FC = () => {
         }
       }
       
-      // 传递风格描述（只要有内容就传递，不管开关状态）
-      const styleDesc = templateStyle.trim() ? templateStyle.trim() : undefined;
-      
-      await initializeProject(activeTab, content, templateFile || undefined, styleDesc);
+      await initializeProject(activeTab, content, templateFile || undefined, imageResolution, imageAspectRatio);
       
       // 根据类型跳转到不同页面
       const projectId = localStorage.getItem('currentProjectId');
@@ -503,17 +498,13 @@ export const Home: React.FC = () => {
               <span className="hidden sm:inline">历史项目</span>
               <span className="sm:hidden">历史</span>
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={<Settings size={16} className="md:w-[18px] md:h-[18px]" />}
-              onClick={() => navigate('/settings')}
-              className="text-xs md:text-sm hover:bg-banana-100/60 hover:shadow-sm hover:scale-105 transition-all duration-200 font-medium"
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="hidden md:inline-flex hover:bg-banana-100/60 hover:shadow-sm hover:scale-105 transition-all duration-200 font-medium"
             >
-              <span className="hidden md:inline">设置</span>
-              <span className="sm:hidden">设</span>
+              帮助
             </Button>
-            <Button variant="ghost" size="sm" className="hidden md:inline-flex hover:bg-banana-50/50">帮助</Button>
           </div>
         </div>
       </nav>
@@ -663,111 +654,83 @@ export const Home: React.FC = () => {
             className="mb-4"
           />
 
+          {/* 图片设置 */}
+          <div className="mb-6 md:mb-8 pt-4 border-t border-gray-100">
+            <div className="flex items-center gap-2 mb-3 md:mb-4">
+              <div className="flex items-center gap-2">
+                <ImagePlus size={18} className="text-purple-600 flex-shrink-0" />
+                <h3 className="text-base md:text-lg font-semibold text-gray-900">
+                  图片设置
+                </h3>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* 清晰度选择 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  图像清晰度
+                </label>
+                <div className="flex gap-2">
+                  {(['1K', '2K', '4K'] as const).map((resolution) => (
+                    <button
+                      key={resolution}
+                      type="button"
+                      onClick={() => setImageResolution(resolution)}
+                      className={`flex-1 px-4 py-2 text-sm font-medium rounded-lg border-2 transition-all ${
+                        imageResolution === resolution
+                          ? 'border-purple-500 bg-purple-50 text-purple-700'
+                          : 'border-gray-200 bg-white text-gray-700 hover:border-purple-300 hover:bg-purple-50/50'
+                      }`}
+                    >
+                      {resolution}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 比例选择 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  图像比例
+                </label>
+                <select
+                  value={imageAspectRatio}
+                  onChange={(e) => setImageAspectRatio(e.target.value as any)}
+                  className="w-full px-4 py-2 text-sm border-2 border-gray-200 rounded-lg focus:border-purple-500 focus:outline-none bg-white"
+                >
+                  <option value="16:9">16:9 (宽屏)</option>
+                  <option value="4:3">4:3 (标准)</option>
+                  <option value="1:1">1:1 (正方形)</option>
+                  <option value="9:16">9:16 (竖屏)</option>
+                  <option value="21:9">21:9 (超宽)</option>
+                  <option value="3:2">3:2</option>
+                  <option value="2:3">2:3</option>
+                  <option value="3:4">3:4</option>
+                  <option value="4:5">4:5</option>
+                  <option value="5:4">5:4</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
           {/* 模板选择 */}
           <div className="mb-6 md:mb-8 pt-4 border-t border-gray-100">
-            <div className="flex items-center justify-between mb-3 md:mb-4">
+            <div className="flex items-center gap-2 mb-3 md:mb-4">
               <div className="flex items-center gap-2">
                 <Palette size={18} className="text-orange-600 flex-shrink-0" />
                 <h3 className="text-base md:text-lg font-semibold text-gray-900">
                   选择风格模板
                 </h3>
               </div>
-              {/* 无模板图模式开关 */}
-              <label className="flex items-center gap-2 cursor-pointer group">
-                <span className="text-sm text-gray-600 group-hover:text-gray-900 transition-colors">
-                  使用文字描述风格
-                </span>
-                <div className="relative">
-                  <input
-                    type="checkbox"
-                    checked={useTemplateStyle}
-                    onChange={(e) => {
-                      setUseTemplateStyle(e.target.checked);
-                      // 切换到无模板图模式时，清空模板选择
-                      if (e.target.checked) {
-                        setSelectedTemplate(null);
-                        setSelectedTemplateId(null);
-                        setSelectedPresetTemplateId(null);
-                      }
-                      // 不再清空风格描述，允许用户保留已输入的内容
-                    }}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-banana-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-banana-500"></div>
-                </div>
-              </label>
             </div>
-            
-            {/* 根据模式显示不同的内容 */}
-            {useTemplateStyle ? (
-              <div className="space-y-3">
-                <Textarea
-                  placeholder="描述您想要的 PPT 风格，例如：简约商务风格，使用蓝色和白色配色，字体清晰大方..."
-                  value={templateStyle}
-                  onChange={(e) => setTemplateStyle(e.target.value)}
-                  rows={3}
-                  className="text-sm border-2 border-gray-200 focus:border-banana-400 transition-colors duration-200"
-                />
-                
-                {/* 预设风格按钮 */}
-                <div className="space-y-2">
-                  <p className="text-xs font-medium text-gray-600">
-                    快速选择预设风格：
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {PRESET_STYLES.map((preset) => (
-                      <div key={preset.id} className="relative">
-                        <button
-                          type="button"
-                          onClick={() => setTemplateStyle(preset.description)}
-                          onMouseEnter={() => setHoveredPresetId(preset.id)}
-                          onMouseLeave={() => setHoveredPresetId(null)}
-                          className="px-3 py-1.5 text-xs font-medium rounded-full border-2 border-gray-200 hover:border-banana-400 hover:bg-banana-50 transition-all duration-200 hover:shadow-sm"
-                        >
-                          {preset.name}
-                        </button>
-                        
-                        {/* 悬停时显示预览图片 */}
-                        {hoveredPresetId === preset.id && preset.previewImage && (
-                          <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                            <div className="bg-white rounded-lg shadow-2xl border-2 border-banana-400 p-2.5 w-72">
-                              <img
-                                src={preset.previewImage}
-                                alt={preset.name}
-                                className="w-full h-40 object-cover rounded"
-                                onError={(e) => {
-                                  // 如果图片加载失败，隐藏预览
-                                  e.currentTarget.style.display = 'none';
-                                }}
-                              />
-                              <p className="text-xs text-gray-600 mt-2 px-1 line-clamp-3">
-                                {preset.description}
-                              </p>
-                            </div>
-                            {/* 小三角形指示器 */}
-                            <div className="absolute top-full left-1/2 transform -translate-x-1/2 -mt-1">
-                              <div className="w-3 h-3 bg-white border-r-2 border-b-2 border-banana-400 transform rotate-45"></div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                
-                <p className="text-xs text-gray-500">
-                  💡 提示：点击预设风格快速填充，或自定义描述风格、配色、布局等要求
-                </p>
-              </div>
-            ) : (
-              <TemplateSelector
-                onSelect={handleTemplateSelect}
-                selectedTemplateId={selectedTemplateId}
-                selectedPresetTemplateId={selectedPresetTemplateId}
-                showUpload={true} // 在主页上传的模板保存到用户模板库
-                projectId={currentProjectId}
-              />
-            )}
+            <TemplateSelector
+              onSelect={handleTemplateSelect}
+              selectedTemplateId={selectedTemplateId}
+              selectedPresetTemplateId={selectedPresetTemplateId}
+              showUpload={true} // 在主页上传的模板保存到用户模板库
+              projectId={currentProjectId}
+            />
           </div>
 
         </Card>
@@ -794,3 +757,4 @@ export const Home: React.FC = () => {
     </div>
   );
 };
+

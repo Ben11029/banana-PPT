@@ -19,34 +19,22 @@ class Project(db.Model):
     extra_requirements = db.Column(db.Text, nullable=True)  # 额外要求，应用到每个页面的AI提示词
     creation_type = db.Column(db.String(20), nullable=False, default='idea')  # idea|outline|descriptions
     template_image_path = db.Column(db.String(500), nullable=True)
-    template_style = db.Column(db.Text, nullable=True)  # 风格描述文本（无模板图模式）
-    # 导出设置
-    export_extractor_method = db.Column(db.String(50), nullable=True, default='hybrid')  # 组件提取方法: mineru, hybrid
-    export_inpaint_method = db.Column(db.String(50), nullable=True, default='hybrid')  # 背景图获取方法: generative, baidu, hybrid
+    image_resolution = db.Column(db.String(10), nullable=True, default='2K')  # 1K, 2K, 4K
+    image_aspect_ratio = db.Column(db.String(10), nullable=True, default='16:9')  # aspect ratios
     status = db.Column(db.String(50), nullable=False, default='DRAFT')
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
-    # 使用 'select' 策略支持 eager loading，同时保持灵活性
-    pages = db.relationship('Page', back_populates='project', lazy='select', 
+    pages = db.relationship('Page', back_populates='project', lazy='dynamic', 
                            cascade='all, delete-orphan', order_by='Page.order_index')
-    tasks = db.relationship('Task', back_populates='project', lazy='select',
+    tasks = db.relationship('Task', back_populates='project', lazy='dynamic',
                            cascade='all, delete-orphan')
-    materials = db.relationship('Material', back_populates='project', lazy='select',
+    materials = db.relationship('Material', back_populates='project', lazy='dynamic',
                            cascade='all, delete-orphan')
     
     def to_dict(self, include_pages=False):
         """Convert to dictionary"""
-        # Format created_at and updated_at with UTC timezone indicator for proper frontend parsing
-        created_at_str = None
-        if self.created_at:
-            created_at_str = self.created_at.isoformat() + 'Z' if not self.created_at.tzinfo else self.created_at.isoformat()
-        
-        updated_at_str = None
-        if self.updated_at:
-            updated_at_str = self.updated_at.isoformat() + 'Z' if not self.updated_at.tzinfo else self.updated_at.isoformat()
-        
         data = {
             'project_id': self.id,
             'idea_prompt': self.idea_prompt,
@@ -55,17 +43,15 @@ class Project(db.Model):
             'extra_requirements': self.extra_requirements,
             'creation_type': self.creation_type,
             'template_image_url': f'/files/{self.id}/template/{self.template_image_path.split("/")[-1]}' if self.template_image_path else None,
-            'template_style': self.template_style,
-            'export_extractor_method': self.export_extractor_method or 'hybrid',
-            'export_inpaint_method': self.export_inpaint_method or 'hybrid',
+            'image_resolution': self.image_resolution,
+            'image_aspect_ratio': self.image_aspect_ratio,
             'status': self.status,
-            'created_at': created_at_str,
-            'updated_at': updated_at_str,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }
         
         if include_pages:
-            # pages 现在是列表，不需要 order_by（已在 relationship 中定义）
-            data['pages'] = [page.to_dict() for page in self.pages]
+            data['pages'] = [page.to_dict() for page in self.pages.order_by('order_index')]
         
         return data
     

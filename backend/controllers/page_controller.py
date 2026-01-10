@@ -5,8 +5,7 @@ import logging
 from flask import Blueprint, request, current_app
 from models import db, Project, Page, PageImageVersion, Task
 from utils import success_response, error_response, not_found, bad_request
-from services import FileService, ProjectContext
-from services.ai_service_manager import get_ai_service
+from services import AIService, FileService, ProjectContext
 from services.task_manager import task_manager, generate_single_page_image_task, edit_page_image_task
 from datetime import datetime
 from pathlib import Path
@@ -233,7 +232,7 @@ def generate_page_description(project_id, page_id):
                 outline.append(page_data)
         
         # Initialize AI service
-        ai_service = get_ai_service()
+        ai_service = AIService()
         
         # Get reference files content and create project context
         from controllers.project_controller import _get_project_reference_files_content
@@ -356,7 +355,7 @@ def generate_page_image(project_id, page_id):
             })
         
         # Initialize services
-        ai_service = get_ai_service()
+        ai_service = AIService()
         
         file_service = FileService(current_app.config['UPLOAD_FOLDER'])
         
@@ -365,10 +364,8 @@ def generate_page_image(project_id, page_id):
         if use_template:
             ref_image_path = file_service.get_template_path(project_id)
         
-        # 检查是否有模板图片或风格描述
-        # 如果都没有，则返回错误
-        if not ref_image_path and not project.template_style:
-            return bad_request("No template image or style description found for project")
+        if not ref_image_path:
+            return bad_request("No template image found for project")
         
         # Generate prompt
         page_data = page.get_outline_content() or {}
@@ -397,12 +394,6 @@ def generate_page_image(project_id, page_id):
                 additional_ref_images = image_urls
                 has_material_images = True
         
-        # 合并额外要求和风格描述
-        combined_requirements = project.extra_requirements or ""
-        if project.template_style:
-            style_requirement = f"\n\nppt页面风格描述：\n\n{project.template_style}"
-            combined_requirements = combined_requirements + style_requirement
-        
         # Create async task for image generation
         task = Task(
             project_id=project_id,
@@ -420,6 +411,10 @@ def generate_page_image(project_id, page_id):
         # Get app instance for background task
         app = current_app._get_current_object()
         
+        # Use project-specific image settings or fall back to config defaults
+        aspect_ratio = project.image_aspect_ratio or current_app.config['DEFAULT_ASPECT_RATIO']
+        resolution = project.image_resolution or current_app.config['DEFAULT_RESOLUTION']
+        
         # Submit background task
         task_manager.submit_task(
             task.id,
@@ -430,10 +425,10 @@ def generate_page_image(project_id, page_id):
             file_service,
             outline,
             use_template,
-            current_app.config['DEFAULT_ASPECT_RATIO'],
-            current_app.config['DEFAULT_RESOLUTION'],
+            aspect_ratio,
+            resolution,
             app,
-            combined_requirements if combined_requirements.strip() else None,
+            project.extra_requirements,
             language
         )
         
@@ -484,7 +479,7 @@ def edit_page_image(project_id, page_id):
             return not_found('Project')
         
         # Initialize services
-        ai_service = get_ai_service()
+        ai_service = AIService()
         
         file_service = FileService(current_app.config['UPLOAD_FOLDER'])
         
@@ -593,6 +588,10 @@ def edit_page_image(project_id, page_id):
         # Get app instance for background task
         app = current_app._get_current_object()
         
+        # Use project-specific image settings or fall back to config defaults
+        aspect_ratio = project.image_aspect_ratio or current_app.config['DEFAULT_ASPECT_RATIO']
+        resolution = project.image_resolution or current_app.config['DEFAULT_RESOLUTION']
+        
         # Submit background task
         task_manager.submit_task(
             task.id,
@@ -602,8 +601,8 @@ def edit_page_image(project_id, page_id):
             data['edit_instruction'],
             ai_service,
             file_service,
-            current_app.config['DEFAULT_ASPECT_RATIO'],
-            current_app.config['DEFAULT_RESOLUTION'],
+            aspect_ratio,
+            resolution,
             original_description,
             additional_ref_images if additional_ref_images else None,
             str(temp_dir) if temp_dir else None,

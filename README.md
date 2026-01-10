@@ -12,7 +12,7 @@
 [![GitHub Forks](https://img.shields.io/github/forks/Anionex/banana-slides?style=square)](https://github.com/Anionex/banana-slides/network)
 [![GitHub Watchers](https://img.shields.io/github/watchers/Anionex/banana-slides?style=square)](https://github.com/Anionex/banana-slides/watchers)
 
-[![Version](https://img.shields.io/badge/version-v0.3.0-4CAF50.svg)](https://github.com/Anionex/banana-slides)
+[![Version](https://img.shields.io/badge/version-v0.1.0-4CAF50.svg)](https://github.com/Anionex/banana-slides)
 ![Docker](https://img.shields.io/badge/Docker-Build-2496ED?logo=docker&logoColor=white)
 [![GitHub issues](https://img.shields.io/github/issues-raw/Anionex/banana-slides)](https://github.com/Anionex/banana-slides/issues)
 [![GitHub pull requests](https://img.shields.io/github/issues-pr-raw/Anionex/banana-slides)](https://github.com/Anionex/banana-slides/pulls)
@@ -111,38 +111,6 @@
 <img width="1000" alt="image" src="https://github.com/user-attachments/assets/3e54bbba-88be-4f69-90a1-02e875c25420" />
 <img width="1748" height="538" alt="PPT与PDF导出" src="https://github.com/user-attachments/assets/647eb9b1-d0b6-42cb-a898-378ebe06c984" />
 
-### 5. 可自由编辑的pptx导出（Beta迭代中）
-- **导出图像为高还原度、背景干净的、可自由编辑图像和文字的PPT页面**
-- 相关更新见 https://github.com/Anionex/banana-slides/issues/121
-<img width="1000"  alt="image" src="https://github.com/user-attachments/assets/a85d2d48-1966-4800-a4bf-73d17f914062" />
-
-<br>
-
-**🌟和notebooklm slide deck功能对比**
-| 功能 | notebooklm | 本项目 | 
-| --- | --- | --- |
-| 页数上限 | 15页 | **无限制** | 
-| 二次编辑 | 不支持 | **框选编辑+口头编辑** |
-| 素材添加 | 生成后无法添加 | **生成后自由添加** |
-| 导出格式 | 仅支持导出为 PDF | **导出为PDF、(可编辑)pptx** |
-| 水印 | 免费版有水印 | **无水印，自由增删元素** |
-
-> 注：随着新功能添加,对比可能过时
-
-
-
-## 🔥 近期更新
-- 【1-4】 : v0.3.0发布：可编辑pptx导出全面升级：
-  * 支持最大程度还原图片中文字的字号、颜色、加粗等样式；
-  * 支持了识别表格中的文字内容；
-  * 更精确的文字大小和文字位置还原逻辑
-  * 优化导出工作流，大大减少了导出后背景图残留文字的现象；
-  * 支持页面多选逻辑，灵活选择需要生成和导出的具体页面。
-  * **详细效果和使用方法见 https://github.com/Anionex/banana-slides/issues/121**
-
-- 【12-27】: 加入了对无图片模板模式的支持和较高质量的文字预设，现在可以通过纯文字描述的方式来控制ppt页面风格
-- 【12-24】: main分支加入了基于nano-banana-pro背景提取的可编辑pptx导出方法（目前Beta）
-
 
 ## 🗺️ 开发计划
 
@@ -155,8 +123,7 @@
 | ✅ 已完成 | 素材模块: 素材生成、上传等 |
 | ✅ 已完成 | 支持多种文件的上传+解析 |
 | ✅ 已完成 | 支持Vibe口头调整大纲和描述 |
-| ✅ 已完成 | 初步支持可编辑版本pptx文件导出 |
-| 🔄 进行中 | 支持多层次、精确抠图的可编辑pptx导出 |
+| 🔄 进行中 | 支持已生成图片的元素分割和进一步编辑（segment + inpaint） |
 | 🔄 进行中 | 网络搜索 |
 | 🔄 进行中 | Agent 模式 |
 | 🧭 规划中 | 优化前端加载速度 |
@@ -195,10 +162,10 @@ cp .env.example .env
 编辑 `.env` 文件，配置必要的环境变量：
 > **项目中大模型接口以AIHubMix平台格式为标准，推荐使用 [AIHubMix](https://aihubmix.com/?aff=17EC) 获取API密钥，减小迁移成本**  
 ```env
-# AI Provider格式配置 (gemini / openai / vertex)
+# AI Provider格式配置 (gemini / openai)
 AI_PROVIDER_FORMAT=gemini
 
-# Gemini 格式配置（当 AI_PROVIDER_FORMAT=gemini 时使用）
+# Gemini 格式配置（当 AI_PROVIDER_FORMAT=gemini时使用）
 GOOGLE_API_KEY=your-api-key-here
 GOOGLE_API_BASE=https://generativelanguage.googleapis.com
 # 代理示例: https://aihubmix.com/gemini
@@ -207,52 +174,14 @@ GOOGLE_API_BASE=https://generativelanguage.googleapis.com
 OPENAI_API_KEY=your-api-key-here
 OPENAI_API_BASE=https://api.openai.com/v1
 # 代理示例: https://aihubmix.com/v1
-
-# Vertex AI 格式配置（当 AI_PROVIDER_FORMAT=vertex 时使用）
-# 需要 GCP 服务账户，可使用 GCP 免费额度
-# VERTEX_PROJECT_ID=your-gcp-project-id
-# VERTEX_LOCATION=global
-# GOOGLE_APPLICATION_CREDENTIALS=./gcp-service-account.json
 ...
 ```
-
-**使用新版可编辑导出配置方法，获得更好的可编辑导出效果**: 需在[百度智能云平台](https://console.bce.baidu.com/iam/#/iam/apikey/list)中获取API KEY，填写在.env文件中的BAIDU_OCR_API_KEY字段（有充足的免费使用额度）。详见https://github.com/Anionex/banana-slides/issues/121 中的说明
-
-
-<details>
-  <summary>📒 使用 Vertex AI（GCP 免费额度）</summary>
-
-如果你想使用 Google Cloud Vertex AI（可使用 GCP 新用户赠金），需要额外配置：
-
-1. 在 [GCP Console](https://console.cloud.google.com/) 创建服务账户并下载 JSON 密钥文件
-2. 将密钥文件重命名为 `gcp-service-account.json` 放在项目根目录
-3. 编辑 `.env` 文件：
-   ```env
-   AI_PROVIDER_FORMAT=vertex
-   VERTEX_PROJECT_ID=your-gcp-project-id
-   VERTEX_LOCATION=global
-   ```
-4. 编辑 `docker-compose.yml`，取消以下注释：
-   ```yaml
-   # environment:
-   #   - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-service-account.json
-   # ...
-   # - ./gcp-service-account.json:/app/gcp-service-account.json:ro
-   ```
-
-> **注意**：`gemini-3-*` 系列模型需要设置 `VERTEX_LOCATION=global`
-
-</details>
 
 2. **启动服务**
 
 ```bash
 docker compose up -d
 ```
-更新：项目也在dockerhub提供了构建好的前端和后端镜像（同步主分支最新版本），名字分别为：
-1. anoinex/banana-slides-frontend
-2. anoinex/banana-slides-backend
-
 
 > [!TIP]
 > 如遇网络问题，可在 `.env` 文件中取消镜像源配置的注释, 再重新运行启动命令：
@@ -277,8 +206,8 @@ docker compose up -d
 # 查看后端日志（实时查看最后50行）
 sudo docker compose logs -f --tail 50 backend
 
-# 查看所有服务日志（后200行）
-sudo docker compose logs -f --tail 200
+# 查看所有服务日志
+sudo docker compose logs -f --tail 50
 
 # 查看前端日志
 sudo docker compose logs -f --tail 50 frontend
@@ -300,8 +229,6 @@ docker compose down
 docker compose build --no-cache
 docker compose up -d
 ```
-
-**注：感谢优秀开发者朋友 [@ShellMonster](https://github.com/ShellMonster/) 提供了[新人部署教程](https://github.com/ShellMonster/banana-slides/blob/docs-deploy-tutorial/docs/NEWBIE_DEPLOYMENT.md)，专为没有任何服务器部署经验的新手设计，可[点击链接](https://github.com/ShellMonster/banana-slides/blob/docs-deploy-tutorial/docs/NEWBIE_DEPLOYMENT.md)查看。**
 
 ### 从源码部署
 
@@ -343,10 +270,10 @@ cp .env.example .env
 编辑 `.env` 文件，配置你的 API 密钥：
 > **项目中大模型接口以AIHubMix平台格式为标准，推荐使用 [AIHubMix](https://aihubmix.com/?aff=17EC) 获取API密钥，减小迁移成本** 
 ```env
-# AI Provider格式配置 (gemini / openai / vertex)
+# AI Provider格式配置 (gemini / openai)
 AI_PROVIDER_FORMAT=gemini
 
-# Gemini 格式配置（当 AI_PROVIDER_FORMAT=gemini 时使用）
+# Gemini 格式配置（当 AI_PROVIDER_FORMAT=gemini时使用）
 GOOGLE_API_KEY=your-api-key-here
 GOOGLE_API_BASE=https://generativelanguage.googleapis.com
 # 代理示例: https://aihubmix.com/gemini
@@ -355,13 +282,6 @@ GOOGLE_API_BASE=https://generativelanguage.googleapis.com
 OPENAI_API_KEY=your-api-key-here
 OPENAI_API_BASE=https://api.openai.com/v1
 # 代理示例: https://aihubmix.com/v1
-
-# Vertex AI 格式配置（当 AI_PROVIDER_FORMAT=vertex 时使用）
-# 需要 GCP 服务账户，可使用 GCP 免费额度
-# VERTEX_PROJECT_ID=your-gcp-project-id
-# VERTEX_LOCATION=global
-# GOOGLE_APPLICATION_CREDENTIALS=./gcp-service-account.json
-
 PORT=5000
 ...
 ```
@@ -389,7 +309,7 @@ npm install
 
 ```bash
 cd backend
-uv run alembic upgrade head && uv run python app.py
+uv run alembic upgrade head ; uv run python .\app.py
 ```
 
 后端服务将在 `http://localhost:5000` 启动。
@@ -528,27 +448,6 @@ banana-slides/
 └── README.md                   # 本文件
 ```
 
-## 交流群
-为了方便大家沟通互助，建此微信交流群.
-
-欢迎提出新功能建议或反馈，本人也会~~佛系~~回答大家问题
-
-<img width="301" alt="image" src="https://github.com/user-attachments/assets/57e6bae0-b127-4e01-8ccf-5669522b0162" />
-
-
-
-**常见问题**
-1.  **支持免费层级的 Gemini API Key 吗？**
-    *   免费层级只支持文本生成，不支持图片生成。
-2.  **生成内容时提示 503 错误或 Retry Error**
-    *   可以根据 README 中的命令查看 Docker 内部日志，定位 503 问题的详细报错，一般是模型配置不正确导致。
-3.  **.env 中设置了 API Key 之后，为什么不生效？**
-    1.  运行时编辑.env需要重启 Docker 容器以应用更改。
-    2.  如果曾在网页设置页中设置，会覆盖 `.env` 中参数，可通过“还原默认设置”还原到 `.env`。
-4.  **生成页面文字有乱码**
-    *   可以尝试更高分辨率的输出（openai格式可能不支持调高分辨率）
-    *   确保在页面描述中包含具体要渲染的文字内容
-  
 
 ## 🤝 贡献指南
 
@@ -598,22 +497,6 @@ banana-slides/
 <p>感谢AIHubMix对本项目的赞助</p>
 </div>
 
-
-<div align="center">
-
-
- <img width="100" alt="image" src="https://github.com/user-attachments/assets/ac2ad6ec-c1cf-4aaa-859c-756b54168c96" />
-
-<details>
-  <summary>感谢<a href="https://api.chatfire.site/login?inviteCode=A15CD6A0">AI火宝</a>对本项目的赞助</summary>
-  “聚合全球多模型API服务商。更低价格享受安全、稳定且72小时链接全球最新模型的服务。”
-</details>
-
-  
-</div>
-
-
-
 ## 致谢
 
 - 项目贡献者们：
@@ -628,9 +511,10 @@ banana-slides/
 
 <img width="240" alt="image" src="https://github.com/user-attachments/assets/fd7a286d-711b-445e-aecf-43e3fe356473" />
 
-感谢以下朋友对项目的无偿赞助支持：
-> @雅俗共赏、@曹峥、@以年观日、@John、@azazo1、@刘聪NLP、@🍟、@苍何、@biubiu  
-> 如对赞助列表有疑问（如赞赏后没看到您的名字），可<a href="mailto:anionex@qq.com">联系作者</a>
+- 感谢以下朋友对项目的无偿赞助支持：
+> - 来自 @azazo1 的 ￥50
+> - 来自 @🍟 的 ￥20
+- 如对赞助列表有疑问（如赞赏后没看到您的名字），欢迎<a href="mailto:anionex@qq.com">联系作者</a>
  
 ## 📈 项目统计
 

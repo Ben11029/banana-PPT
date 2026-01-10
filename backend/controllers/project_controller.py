@@ -1,28 +1,15 @@
 """
 Project Controller - handles project-related endpoints
 """
-import json
 import logging
+from flask import Blueprint, request, jsonify
+from models import db, Project, Page, Task, ReferenceFile
+from utils import success_response, error_response, not_found, bad_request
+from services import AIService, ProjectContext
+from services.task_manager import task_manager, generate_descriptions_task, generate_images_task
+import json
 import traceback
 from datetime import datetime
-
-from flask import Blueprint, request, jsonify, current_app
-from sqlalchemy import desc
-from sqlalchemy.orm import joinedload
-from werkzeug.exceptions import BadRequest
-
-from models import db, Project, Page, Task, ReferenceFile
-from services import ProjectContext
-from services.ai_service_manager import get_ai_service
-from services.task_manager import (
-    task_manager,
-    generate_descriptions_task,
-    generate_images_task
-)
-from utils import (
-    success_response, error_response, not_found, bad_request,
-    parse_page_ids_from_body, get_filtered_pages
-)
 
 logger = logging.getLogger(__name__)
 
@@ -120,41 +107,24 @@ def list_projects():
     GET /api/projects - Get all projects (for history)
     
     Query params:
-    - limit: number of projects to return (default: 50, max: 100)
+    - limit: number of projects to return (default: 50)
     - offset: offset for pagination (default: 0)
     """
     try:
-        # Parameter validation
+        from sqlalchemy import desc
+        
         limit = request.args.get('limit', 50, type=int)
         offset = request.args.get('offset', 0, type=int)
         
-        # Enforce limits to prevent performance issues
-        limit = min(max(1, limit), 100)  # Between 1-100
-        offset = max(0, offset)  # Non-negative
-        
-        # Fetch limit + 1 items to check for more pages efficiently
-        # This avoids a second database query
-        projects_with_extra = Project.query\
-            .options(joinedload(Project.pages))\
-            .order_by(desc(Project.updated_at))\
-            .limit(limit + 1)\
-            .offset(offset)\
-            .all()
-        
-        # Check if there are more items beyond the current page
-        has_more = len(projects_with_extra) > limit
-        # Return only the requested limit
-        projects = projects_with_extra[:limit]
+        # Get projects ordered by updated_at descending
+        projects = Project.query.order_by(desc(Project.updated_at)).limit(limit).offset(offset).all()
         
         return success_response({
             'projects': [project.to_dict(include_pages=True) for project in projects],
-            'has_more': has_more,
-            'limit': limit,
-            'offset': offset
+            'total': Project.query.count()
         })
     
     except Exception as e:
-        logger.error(f"list_projects failed: {str(e)}", exc_info=True)
         return error_response('SERVER_ERROR', str(e), 500)
 
 
@@ -178,11 +148,7 @@ def create_project():
         if not data:
             return bad_request("Request body is required")
         
-        # creation_type is required
-        if 'creation_type' not in data:
-            return bad_request("creation_type is required")
-        
-        creation_type = data.get('creation_type')
+        creation_type = data.get('creation_type', 'idea')
         
         if creation_type not in ['idea', 'outline', 'descriptions']:
             return bad_request("Invalid creation_type")
@@ -193,7 +159,8 @@ def create_project():
             idea_prompt=data.get('idea_prompt'),
             outline_text=data.get('outline_text'),
             description_text=data.get('description_text'),
-            template_style=data.get('template_style'),
+            image_resolution=data.get('image_resolution', '2K'),
+            image_aspect_ratio=data.get('image_aspect_ratio', '16:9'),
             status='DRAFT'
         )
         
@@ -205,12 +172,6 @@ def create_project():
             'status': project.status,
             'pages': []
         }, status_code=201)
-    
-    except BadRequest as e:
-        # Handle JSON parsing errors (invalid JSON body)
-        db.session.rollback()
-        logger.warning(f"create_project: Invalid JSON body - {str(e)}")
-        return bad_request("Invalid JSON in request body")
     
     except Exception as e:
         db.session.rollback()
@@ -225,11 +186,7 @@ def get_project(project_id):
     GET /api/projects/{project_id} - Get project details
     """
     try:
-        # Use eager loading to load project and related pages
-        project = Project.query\
-            .options(joinedload(Project.pages))\
-            .filter(Project.id == project_id)\
-            .first()
+        project = Project.query.get(project_id)
         
         if not project:
             return not_found('Project')
@@ -237,7 +194,6 @@ def get_project(project_id):
         return success_response(project.to_dict(include_pages=True))
     
     except Exception as e:
-        logger.error(f"get_project failed: {str(e)}", exc_info=True)
         return error_response('SERVER_ERROR', str(e), 500)
 
 
@@ -253,11 +209,7 @@ def update_project(project_id):
     }
     """
     try:
-        # Use eager loading to load project and pages (for page order updates)
-        project = Project.query\
-            .options(joinedload(Project.pages))\
-            .filter(Project.id == project_id)\
-            .first()
+        project = Project.query.get(project_id)
         
         if not project:
             return not_found('Project')
@@ -272,32 +224,13 @@ def update_project(project_id):
         if 'extra_requirements' in data:
             project.extra_requirements = data['extra_requirements']
         
-        # Update template_style if provided
-        if 'template_style' in data:
-            project.template_style = data['template_style']
-        
-        # Update export settings if provided
-        if 'export_extractor_method' in data:
-            project.export_extractor_method = data['export_extractor_method']
-        if 'export_inpaint_method' in data:
-            project.export_inpaint_method = data['export_inpaint_method']
-        
         # Update page order if provided
         if 'pages_order' in data:
             pages_order = data['pages_order']
-            # Optimization: batch query all pages to update, avoiding N+1 queries
-            pages_to_update = Page.query.filter(
-                Page.id.in_(pages_order),
-                Page.project_id == project_id
-            ).all()
-            
-            # Create page_id -> page mapping for O(1) lookup
-            pages_map = {page.id: page for page in pages_to_update}
-            
-            # Batch update order
             for index, page_id in enumerate(pages_order):
-                if page_id in pages_map:
-                    pages_map[page_id].order_index = index
+                page = Page.query.get(page_id)
+                if page and page.project_id == project_id:
+                    page.order_index = index
         
         project.updated_at = datetime.utcnow()
         db.session.commit()
@@ -306,7 +239,6 @@ def update_project(project_id):
     
     except Exception as e:
         db.session.rollback()
-        logger.error(f"update_project failed: {str(e)}", exc_info=True)
         return error_response('SERVER_ERROR', str(e), 500)
 
 
@@ -323,6 +255,7 @@ def delete_project(project_id):
         
         # Delete project files
         from services import FileService
+        from flask import current_app
         file_service = FileService(current_app.config['UPLOAD_FOLDER'])
         file_service.delete_project_files(project_id)
         
@@ -334,7 +267,6 @@ def delete_project(project_id):
     
     except Exception as e:
         db.session.rollback()
-        logger.error(f"delete_project failed: {str(e)}", exc_info=True)
         return error_response('SERVER_ERROR', str(e), 500)
 
 
@@ -349,7 +281,6 @@ def generate_outline(project_id):
     Request body (optional):
     {
         "idea_prompt": "...",  # for idea type
-        "language": "zh"  # output language: zh, en, ja, auto
     }
     """
     try:
@@ -358,12 +289,9 @@ def generate_outline(project_id):
         if not project:
             return not_found('Project')
         
-        # Get singleton AI service instance
-        ai_service = get_ai_service()
-        
-        # Get request data and language parameter
-        data = request.get_json() or {}
-        language = data.get('language', current_app.config.get('OUTPUT_LANGUAGE', 'zh'))
+        # Initialize AI service
+        from flask import current_app
+        ai_service = AIService()
         
         # Get reference files content and create project context
         reference_files_content = _get_project_reference_files_content(project_id)
@@ -382,12 +310,13 @@ def generate_outline(project_id):
             
             # Create project context and parse outline text into structured format
             project_context = ProjectContext(project, reference_files_content)
-            outline = ai_service.parse_outline_text(project_context, language=language)
+            outline = ai_service.parse_outline_text(project_context)
         elif project.creation_type == 'descriptions':
             # 从描述生成：这个类型应该使用专门的端点
             return bad_request("Use /generate/from-description endpoint for descriptions type")
         else:
             # 一句话生成：从idea生成大纲
+            data = request.get_json() or {}
             idea_prompt = data.get('idea_prompt') or project.idea_prompt
             
             if not idea_prompt:
@@ -397,13 +326,12 @@ def generate_outline(project_id):
             
             # Create project context and generate outline from idea
             project_context = ProjectContext(project, reference_files_content)
-            outline = ai_service.generate_outline(project_context, language=language)
+            outline = ai_service.generate_outline(project_context)
         
         # Flatten outline to pages
         pages_data = ai_service.flatten_outline(outline)
         
         # Delete existing pages (using ORM session to trigger cascades)
-        # Note: Cannot use bulk delete as it bypasses ORM cascades for PageImageVersion
         old_pages = Page.query.filter_by(project_id=project_id).all()
         for old_page in old_pages:
             db.session.delete(old_page)
@@ -458,10 +386,8 @@ def generate_from_description(project_id):
     Request body (optional):
     {
         "description_text": "...",  # if not provided, uses project.description_text
-        "language": "zh"  # output language: zh, en, ja, auto
     }
     """
-    
     try:
         project = Project.query.get(project_id)
         
@@ -471,18 +397,18 @@ def generate_from_description(project_id):
         if project.creation_type != 'descriptions':
             return bad_request("This endpoint is only for descriptions type projects")
         
-        # Get description text and language
+        # Get description text
         data = request.get_json() or {}
         description_text = data.get('description_text') or project.description_text
-        language = data.get('language', current_app.config.get('OUTPUT_LANGUAGE', 'zh'))
         
         if not description_text:
             return bad_request("description_text is required")
         
         project.description_text = description_text
         
-        # Get singleton AI service instance
-        ai_service = get_ai_service()
+        # Initialize AI service
+        from flask import current_app
+        ai_service = AIService()
         
         # Get reference files content and create project context
         reference_files_content = _get_project_reference_files_content(project_id)
@@ -492,12 +418,12 @@ def generate_from_description(project_id):
         
         # Step 1: Parse description to outline
         logger.info("Step 1: 解析描述文本到大纲结构...")
-        outline = ai_service.parse_description_to_outline(project_context, language=language)
+        outline = ai_service.parse_description_to_outline(project_context)
         logger.info(f"大纲解析完成，共 {len(ai_service.flatten_outline(outline))} 页")
         
         # Step 2: Split description into page descriptions
         logger.info("Step 2: 切分描述文本到每页描述...")
-        page_descriptions = ai_service.parse_description_to_page_descriptions(project_context, outline, language=language)
+        page_descriptions = ai_service.parse_description_to_page_descriptions(project_context, outline)
         logger.info(f"描述切分完成，共 {len(page_descriptions)} 页")
         
         # Step 3: Flatten outline to pages
@@ -568,8 +494,7 @@ def generate_descriptions(project_id):
     
     Request body:
     {
-        "max_workers": 5,
-        "language": "zh"  # output language: zh, en, ja, auto
+        "max_workers": 5
     }
     """
     try:
@@ -594,9 +519,9 @@ def generate_descriptions(project_id):
         outline = _reconstruct_outline_from_pages(pages)
         
         data = request.get_json() or {}
+        from flask import current_app
         # 从配置中读取默认并发数，如果请求中提供了则使用请求的值
         max_workers = data.get('max_workers', current_app.config.get('MAX_DESCRIPTION_WORKERS', 5))
-        language = data.get('language', current_app.config.get('OUTPUT_LANGUAGE', 'zh'))
         
         # Create task
         task = Task(
@@ -613,8 +538,8 @@ def generate_descriptions(project_id):
         db.session.add(task)
         db.session.commit()
         
-        # Get singleton AI service instance
-        ai_service = get_ai_service()
+        # Initialize AI service
+        ai_service = AIService()
         
         # Get reference files content and create project context
         reference_files_content = _get_project_reference_files_content(project_id)
@@ -632,8 +557,7 @@ def generate_descriptions(project_id):
             project_context,
             outline,
             max_workers,
-            app,
-            language
+            app
         )
         
         # Update project status
@@ -648,7 +572,6 @@ def generate_descriptions(project_id):
     
     except Exception as e:
         db.session.rollback()
-        logger.error(f"generate_descriptions failed: {str(e)}", exc_info=True)
         return error_response('SERVER_ERROR', str(e), 500)
 
 
@@ -660,9 +583,7 @@ def generate_images(project_id):
     Request body:
     {
         "max_workers": 8,
-        "use_template": true,
-        "language": "zh",  # output language: zh, en, ja, auto
-        "page_ids": ["id1", "id2"]  # optional: specific page IDs to generate (if not provided, generates all)
+        "use_template": true
     }
     """
     try:
@@ -677,11 +598,8 @@ def generate_images(project_id):
         # IMPORTANT: Expire cached objects to ensure fresh data
         db.session.expire_all()
         
-        data = request.get_json() or {}
-        
-        # Get page_ids from request body and fetch filtered pages
-        selected_page_ids = parse_page_ids_from_body(data)
-        pages = get_filtered_pages(project_id, selected_page_ids if selected_page_ids else None)
+        # Get pages
+        pages = Page.query.filter_by(project_id=project_id).order_by(Page.order_index).all()
         
         if not pages:
             return bad_request("No pages found for project")
@@ -689,10 +607,11 @@ def generate_images(project_id):
         # Reconstruct outline from pages with part structure
         outline = _reconstruct_outline_from_pages(pages)
         
+        data = request.get_json() or {}
+        from flask import current_app
         # 从配置中读取默认并发数，如果请求中提供了则使用请求的值
         max_workers = data.get('max_workers', current_app.config.get('MAX_IMAGE_WORKERS', 8))
         use_template = data.get('use_template', True)
-        language = data.get('language', current_app.config.get('OUTPUT_LANGUAGE', 'zh'))
         
         # Create task
         task = Task(
@@ -709,20 +628,18 @@ def generate_images(project_id):
         db.session.add(task)
         db.session.commit()
         
-        # Get singleton AI service instance
-        ai_service = get_ai_service()
+        # Initialize services
+        ai_service = AIService()
         
         from services import FileService
         file_service = FileService(current_app.config['UPLOAD_FOLDER'])
         
-        # 合并额外要求和风格描述
-        combined_requirements = project.extra_requirements or ""
-        if project.template_style:
-            style_requirement = f"\n\nppt页面风格描述：\n\n{project.template_style}"
-            combined_requirements = combined_requirements + style_requirement
-        
         # Get app instance for background task
         app = current_app._get_current_object()
+        
+        # Use project-specific image settings or fall back to config defaults
+        aspect_ratio = project.image_aspect_ratio or current_app.config['DEFAULT_ASPECT_RATIO']
+        resolution = project.image_resolution or current_app.config['DEFAULT_RESOLUTION']
         
         # Submit background task
         task_manager.submit_task(
@@ -734,12 +651,10 @@ def generate_images(project_id):
             outline,
             use_template,
             max_workers,
-            current_app.config['DEFAULT_ASPECT_RATIO'],
-            current_app.config['DEFAULT_RESOLUTION'],
+            aspect_ratio,
+            resolution,
             app,
-            combined_requirements if combined_requirements.strip() else None,
-            language,
-            selected_page_ids if selected_page_ids else None
+            project.extra_requirements
         )
         
         # Update project status
@@ -754,7 +669,6 @@ def generate_images(project_id):
     
     except Exception as e:
         db.session.rollback()
-        logger.error(f"generate_images failed: {str(e)}", exc_info=True)
         return error_response('SERVER_ERROR', str(e), 500)
 
 
@@ -772,7 +686,6 @@ def get_task_status(project_id, task_id):
         return success_response(task.to_dict())
     
     except Exception as e:
-        logger.error(f"get_task_status failed: {str(e)}", exc_info=True)
         return error_response('SERVER_ERROR', str(e), 500)
 
 
@@ -783,8 +696,7 @@ def refine_outline(project_id):
     
     Request body:
     {
-        "user_requirement": "用户要求，例如：增加一页关于XXX的内容",
-        "language": "zh"  # output language: zh, en, ja, auto
+        "user_requirement": "用户要求，例如：增加一页关于XXX的内容"
     }
     """
     try:
@@ -814,8 +726,9 @@ def refine_outline(project_id):
         else:
             current_outline = _reconstruct_outline_from_pages(pages)
         
-        # Get singleton AI service instance
-        ai_service = get_ai_service()
+        # Initialize AI service
+        from flask import current_app
+        ai_service = AIService()
         
         # Get reference files content and create project context
         reference_files_content = _get_project_reference_files_content(project_id)
@@ -828,9 +741,8 @@ def refine_outline(project_id):
         
         project_context = ProjectContext(project.to_dict(), reference_files_content)
         
-        # Get previous requirements and language from request
+        # Get previous requirements from request
         previous_requirements = data.get('previous_requirements', [])
-        language = data.get('language', current_app.config.get('OUTPUT_LANGUAGE', 'zh'))
         
         # Refine outline
         logger.info(f"开始修改大纲: 项目 {project_id}, 用户要求: {user_requirement}, 历史要求数: {len(previous_requirements)}")
@@ -838,8 +750,7 @@ def refine_outline(project_id):
             current_outline=current_outline,
             user_requirement=user_requirement,
             project_context=project_context,
-            previous_requirements=previous_requirements,
-            language=language
+            previous_requirements=previous_requirements
         )
         
         # Flatten outline to pages
@@ -937,8 +848,7 @@ def refine_descriptions(project_id):
     
     Request body:
     {
-        "user_requirement": "用户要求，例如：让描述更详细一些",
-        "language": "zh"  # output language: zh, en, ja, auto
+        "user_requirement": "用户要求，例如：让描述更详细一些"
     }
     """
     try:
@@ -983,8 +893,9 @@ def refine_descriptions(project_id):
                 'description_content': desc_content if desc_content else ''
             })
         
-        # Get singleton AI service instance
-        ai_service = get_ai_service()
+        # Initialize AI service
+        from flask import current_app
+        ai_service = AIService()
         
         # Get reference files content and create project context
         reference_files_content = _get_project_reference_files_content(project_id)
@@ -997,9 +908,8 @@ def refine_descriptions(project_id):
         
         project_context = ProjectContext(project.to_dict(), reference_files_content)
         
-        # Get previous requirements and language from request
+        # Get previous requirements from request
         previous_requirements = data.get('previous_requirements', [])
-        language = data.get('language', current_app.config.get('OUTPUT_LANGUAGE', 'zh'))
         
         # Refine descriptions
         logger.info(f"开始修改页面描述: 项目 {project_id}, 用户要求: {user_requirement}, 历史要求数: {len(previous_requirements)}")
@@ -1008,8 +918,7 @@ def refine_descriptions(project_id):
             user_requirement=user_requirement,
             project_context=project_context,
             outline=outline,
-            previous_requirements=previous_requirements,
-            language=language
+            previous_requirements=previous_requirements
         )
         
         # 验证返回的描述数量
@@ -1052,3 +961,4 @@ def refine_descriptions(project_id):
         db.session.rollback()
         logger.error(f"refine_descriptions failed: {str(e)}", exc_info=True)
         return error_response('AI_SERVICE_ERROR', str(e), 503)
+

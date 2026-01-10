@@ -54,8 +54,7 @@ class FileParserService:
                  google_api_key: str = "", google_api_base: str = "",
                  openai_api_key: str = "", openai_api_base: str = "",
                  image_caption_model: str = "gemini-3-flash-preview",
-                 provider_format: str = None,
-                 mineru_model_version: str = "vlm"):
+                 provider_format: str = None):
         """
         Initialize the file parser service
         
@@ -68,11 +67,9 @@ class FileParserService:
             openai_api_base: OpenAI API base URL
             image_caption_model: Model to use for image captioning
             provider_format: AI provider format ('gemini' or 'openai'). If not provided, reads from environment variable.
-            mineru_model_version: MinerU model version ('vlm' or 'pipeline'). Default is 'vlm'.
         """
         self.mineru_token = mineru_token
         self.mineru_api_base = mineru_api_base
-        self.mineru_model_version = mineru_model_version
         self.get_upload_url_api = f"{mineru_api_base}/api/v4/file-urls/batch"
         self.get_result_api_template = f"{mineru_api_base}/api/v4/extract-results/batch/{{}}"
         
@@ -116,7 +113,7 @@ class FileParserService:
         else:
             return bool(self._google_api_key)
     
-    def parse_file(self, file_path: str, filename: str) -> tuple[Optional[str], Optional[str], Optional[str], Optional[str], int]:
+    def parse_file(self, file_path: str, filename: str) -> tuple[Optional[str], Optional[str], Optional[str], int]:
         """
         Parse a file using MinerU service and enhance with image captions
         
@@ -125,10 +122,9 @@ class FileParserService:
             filename: Original filename
             
         Returns:
-            Tuple of (batch_id, markdown_content, extract_id, error_message, failed_image_count)
+            Tuple of (batch_id, markdown_content, error_message, failed_image_count)
             - batch_id: MinerU batch ID (for tracking, None for text files)
             - markdown_content: Parsed markdown with enhanced image descriptions
-            - extract_id: Unique ID for the extracted files directory (None for text files)
             - error_message: Error message if parsing failed
             - failed_image_count: Number of images that failed to generate captions
         """
@@ -152,7 +148,7 @@ class FileParserService:
             logger.info(f"Step 1/4: Requesting upload URL for {filename}...")
             batch_id, upload_url, error = self._get_upload_url(filename)
             if error:
-                return None, None, None, error, 0
+                return None, None, error, 0
             
             logger.info(f"Got upload URL. Batch ID: {batch_id}")
             
@@ -160,15 +156,15 @@ class FileParserService:
             logger.info(f"Step 2/4: Uploading file {filename}...")
             error = self._upload_file(file_path, upload_url)
             if error:
-                return batch_id, None, None, error, 0
+                return batch_id, None, error, 0
             
             logger.info("File uploaded successfully.")
             
             # Step 3: Poll for parsing result
             logger.info("Step 3/4: Waiting for parsing to complete...")
-            markdown_content, extract_id, error = self._poll_result(batch_id)
+            markdown_content, error = self._poll_result(batch_id)
             if error:
-                return batch_id, None, None, error, 0
+                return batch_id, None, error, 0
             
             logger.info("File parsed successfully.")
             
@@ -180,17 +176,17 @@ class FileParserService:
                     logger.warning(f"Markdown enhanced with image captions, but {failed_count} images failed to generate captions.")
                 else:
                     logger.info("Markdown enhanced with image captions (all images succeeded).")
-                return batch_id, enhanced_content, extract_id, None, failed_count
+                return batch_id, enhanced_content, None, failed_count
             else:
                 logger.info("Skipping image caption enhancement (no Gemini client).")
-                return batch_id, markdown_content, extract_id, None, 0
+                return batch_id, markdown_content, None, 0
             
         except Exception as e:
             error_msg = f"Unexpected error during file parsing: {str(e)}"
             logger.error(error_msg, exc_info=True)
-            return None, None, None, error_msg, 0
+            return None, None, error_msg, 0
     
-    def _parse_text_file(self, file_path: str, filename: str) -> tuple[Optional[str], Optional[str], Optional[str], Optional[str], int]:
+    def _parse_text_file(self, file_path: str, filename: str) -> tuple[Optional[str], Optional[str], Optional[str], int]:
         """
         Parse plain text file directly without MinerU
         
@@ -199,7 +195,7 @@ class FileParserService:
             filename: Original filename
             
         Returns:
-            Tuple of (batch_id, markdown_content, extract_id, error_message, failed_image_count)
+            Tuple of (batch_id, markdown_content, error_message, failed_image_count)
         """
         try:
             # Read file content
@@ -218,9 +214,9 @@ class FileParserService:
                         logger.warning(f"Text file enhanced with image captions, but {failed_count} images failed to generate captions.")
                     else:
                         logger.info("Text file enhanced with image captions (all images succeeded).")
-                    return None, enhanced_content, None, None, failed_count
+                    return None, enhanced_content, None, failed_count
             
-            return None, content, None, None, 0
+            return None, content, None, 0
             
         except UnicodeDecodeError:
             # Try with different encoding
@@ -236,19 +232,19 @@ class FileParserService:
                         logger.warning(f"Text file enhanced with image captions, but {failed_count} images failed to generate captions.")
                     else:
                         logger.info("Text file enhanced with image captions (all images succeeded).")
-                    return None, enhanced_content, None, None, failed_count
+                    return None, enhanced_content, None, failed_count
                 
-                return None, content, None, None, 0
+                return None, content, None, 0
             except Exception as e:
                 error_msg = f"Failed to read text file with multiple encodings: {str(e)}"
                 logger.error(error_msg)
-                return None, None, None, error_msg, 0
+                return None, None, error_msg, 0
         except Exception as e:
             error_msg = f"Failed to read text file: {str(e)}"
             logger.error(error_msg)
-            return None, None, None, error_msg, 0
+            return None, None, error_msg, 0
     
-    def _parse_spreadsheet_file(self, file_path: str, filename: str) -> tuple[Optional[str], Optional[str], Optional[str], Optional[str], int]:
+    def _parse_spreadsheet_file(self, file_path: str, filename: str) -> tuple[Optional[str], Optional[str], Optional[str], int]:
         """
         Parse spreadsheet files (xlsx, xls, csv) using markitdown
         
@@ -257,7 +253,7 @@ class FileParserService:
             filename: Original filename
             
         Returns:
-            Tuple of (batch_id, markdown_content, extract_id, error_message, failed_image_count)
+            Tuple of (batch_id, markdown_content, error_message, failed_image_count)
         """
         try:
             # Use markitdown to convert spreadsheet to markdown
@@ -268,12 +264,12 @@ class FileParserService:
             logger.info(f"Spreadsheet file converted successfully: {len(markdown_content)} characters")
             
             # Spreadsheet files typically don't have images, so no need for caption enhancement
-            return None, markdown_content, None, None, 0
+            return None, markdown_content, None, 0
             
         except Exception as e:
             error_msg = f"Failed to parse spreadsheet file: {str(e)}"
             logger.error(error_msg, exc_info=True)
-            return None, None, None, error_msg, 0
+            return None, None, error_msg, 0
     
     def _get_upload_url(self, filename: str) -> tuple[Optional[str], Optional[str], Optional[str]]:
         """Get upload URL from MinerU"""
@@ -284,7 +280,7 @@ class FileParserService:
         
         upload_data = {
             "files": [{"name": filename}],
-            "model_version": self.mineru_model_version  # "vlm" or "pipeline"
+            "model_version": "vlm"  # or "pipeline"
         }
         
         try:
@@ -333,12 +329,8 @@ class FileParserService:
             logger.error(error_msg)
             return error_msg
     
-    def _poll_result(self, batch_id: str, max_wait_time: int = 600) -> tuple[Optional[str], Optional[str], Optional[str]]:
-        """Poll for parsing result
-        
-        Returns:
-            Tuple of (markdown_content, extract_id, error_message)
-        """
+    def _poll_result(self, batch_id: str, max_wait_time: int = 600) -> tuple[Optional[str], Optional[str]]:
+        """Poll for parsing result"""
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.mineru_token}"
@@ -351,7 +343,7 @@ class FileParserService:
             if time.time() - start_time > max_wait_time:
                 error_msg = f"Parsing timeout after {max_wait_time} seconds"
                 logger.error(error_msg)
-                return None, None, error_msg
+                return None, error_msg
             
             try:
                 response = requests.get(result_url, headers=headers, timeout=30)
@@ -361,7 +353,7 @@ class FileParserService:
                 if task_info.get("code") != 0:
                     error_msg = f"Failed to query task status: {task_info.get('msg')}"
                     logger.error(error_msg)
-                    return None, None, error_msg
+                    return None, error_msg
                 
                 task_status = task_info["data"]["extract_result"][0]["state"]
                 
@@ -374,7 +366,7 @@ class FileParserService:
                     err_msg = task_info["data"]["extract_result"][0].get("err_msg", "Unknown error")
                     error_msg = f"File parsing failed: {err_msg}"
                     logger.error(error_msg)
-                    return None, None, error_msg
+                    return None, error_msg
                 else:
                     logger.debug(f"Current task status: {task_status}, waiting...")
                     time.sleep(2)  # Wait 2 seconds before next poll
@@ -383,12 +375,8 @@ class FileParserService:
                 logger.warning(f"Network error while polling result: {str(e)}, retrying...")
                 time.sleep(2)
     
-    def _download_markdown(self, zip_url: str) -> tuple[Optional[str], Optional[str], Optional[str]]:
-        """Download and extract markdown from result zip, save images to local server
-        
-        Returns:
-            Tuple of (markdown_content, extract_id, error_message)
-        """
+    def _download_markdown(self, zip_url: str) -> tuple[Optional[str], Optional[str]]:
+        """Download and extract markdown from result zip, save images to local server"""
         try:
             response = requests.get(zip_url, timeout=60)
             response.raise_for_status()
@@ -434,7 +422,7 @@ class FileParserService:
                 if not markdown_content:
                     error_msg = "No markdown file found in result zip"
                     logger.error(error_msg)
-                    return None, None, error_msg
+                    return None, error_msg
             
             # Replace relative image paths with local server URLs
             markdown_content = self._replace_image_paths(
@@ -443,20 +431,20 @@ class FileParserService:
                 extract_id
             )
             
-            return markdown_content, extract_id, None
+            return markdown_content, None
                 
         except requests.exceptions.RequestException as e:
             error_msg = f"Failed to download result: {str(e)}"
             logger.error(error_msg)
-            return None, None, error_msg
+            return None, error_msg
         except zipfile.BadZipFile:
             error_msg = "Downloaded file is not a valid ZIP archive"
             logger.error(error_msg)
-            return None, None, error_msg
+            return None, error_msg
         except Exception as e:
             error_msg = f"Failed to process ZIP file: {str(e)}"
             logger.error(error_msg)
-            return None, None, error_msg
+            return None, error_msg
     
     def _replace_image_paths(self, markdown_content: str, markdown_file_path: str, extract_id: str) -> str:
         """Replace relative image paths in markdown with local server URLs"""
